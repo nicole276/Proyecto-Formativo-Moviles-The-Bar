@@ -29,6 +29,27 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         primarySwatch: Colors.blue,
         scaffoldBackgroundColor: TheBarColors.beigeClaro,
+        // Esto cambia el color morado por defecto a naranja
+        primaryColor: TheBarColors.naranjaCalido,
+        focusColor: TheBarColors.naranjaCalido,
+        colorScheme: const ColorScheme.light(
+          primary: TheBarColors.naranjaCalido,
+          secondary: TheBarColors.naranjaCalido,
+        ),
+        inputDecorationTheme: const InputDecorationTheme(
+          // Borde cuando está enfocado (naranja)
+          focusedBorder: OutlineInputBorder(
+            borderSide: BorderSide(color: TheBarColors.naranjaCalido, width: 2),
+          ),
+          // Borde normal
+          enabledBorder: OutlineInputBorder(
+            borderSide: BorderSide(color: Colors.grey),
+          ),
+          // Label flotante (cuando hay texto escrito) - naranja
+          floatingLabelStyle: TextStyle(color: TheBarColors.naranjaCalido),
+          // Icono del prefix cuando está enfocado
+          iconColor: TheBarColors.naranjaCalido,
+        ),
       ),
       home: const LoginScreen(),
       debugShowCheckedModeBanner: false,
@@ -561,7 +582,7 @@ class _LoginScreenState extends State<LoginScreen> {
 }
 
 // ==============================================
-// PANTALLA PRINCIPAL (HOME)
+// PANTALLA PRINCIPAL (HOME) - CORREGIDA
 // ==============================================
 class HomeScreen extends StatefulWidget {
   final String usuarioEmail;
@@ -582,16 +603,31 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _paginaActual = 0;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
-  late final List<Widget> _paginas;
+  late List<Widget> _paginas;
 
   @override
   void initState() {
     super.initState();
+    // Inicializar con valores temporales
     _paginas = [
-      PaginaHome(usuarioEmail: widget.usuarioEmail, userData: widget.userData),
-      VentasScreen(token: widget.token, userData: widget.userData),
-      ComprasScreen(token: widget.token, userData: widget.userData),
+      const Center(child: CircularProgressIndicator()),
+      const Center(child: CircularProgressIndicator()),
+      const Center(child: CircularProgressIndicator()),
+      const Center(child: CircularProgressIndicator()),
     ];
+    
+    // Cargar las páginas reales después del primer frame
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _paginas = [
+          PaginaHome(usuarioEmail: widget.usuarioEmail, userData: widget.userData),
+          DashboardScreen(token: widget.token, userData: widget.userData),
+          VentasScreen(token: widget.token, userData: widget.userData),
+          ComprasScreen(token: widget.token, userData: widget.userData),
+        ];
+        setState(() {});
+      }
+    });
   }
 
   void _cambiarPagina(int index) {
@@ -608,7 +644,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final titles = ['Inicio', 'Ventas', 'Compras'];
+    final titles = ['Inicio', 'Dashboard', 'Ventas', 'Compras'];
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: TheBarColors.beigeClaro,
@@ -661,8 +697,9 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 20),
             _buildDrawerItem(Icons.home, 'Inicio', 0),
-            _buildDrawerItem(Icons.shopping_cart, 'Ventas', 1),
-            _buildDrawerItem(Icons.inventory, 'Compras', 2),
+            _buildDrawerItem(Icons.dashboard, 'Dashboard', 1),
+            _buildDrawerItem(Icons.shopping_cart, 'Ventas', 2),
+            _buildDrawerItem(Icons.inventory, 'Compras', 3),
             const Spacer(),
             const Divider(color: Colors.white24),
             ListTile(
@@ -789,6 +826,405 @@ class PaginaHome extends StatelessWidget {
 }
 
 // ==============================================
+// DASHBOARD CON GRÁFICOS - CORREGIDO
+// ==============================================
+class DashboardScreen extends StatefulWidget {
+  final String token;
+  final Map<String, dynamic> userData;
+
+  const DashboardScreen({super.key, required this.token, required this.userData});
+
+  @override
+  State<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends State<DashboardScreen> {
+  List<dynamic> _ventas = [];
+  List<dynamic> _compras = [];
+  bool _cargando = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _cargarDatos();
+  }
+
+  Future<Map<String, dynamic>> _get(String endpoint) async {
+    try {
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}$endpoint'),
+        headers: {'Authorization': 'Bearer ${widget.token}', 'Content-Type': 'application/json'},
+      ).timeout(const Duration(seconds: 15));
+      if (response.statusCode == 200) {
+        return jsonDecode(utf8.decode(response.bodyBytes));
+      }
+      return {'success': false, 'data': []};
+    } catch (e) {
+      return {'success': false, 'data': []};
+    }
+  }
+
+  Future<void> _cargarDatos() async {
+    setState(() => _cargando = true);
+    try {
+      final ventasData = await _get('/api/ventas');
+      final comprasData = await _get('/api/compras');
+      
+      if (ventasData['success'] == true) {
+        setState(() => _ventas = ventasData['data'] ?? []);
+      }
+      if (comprasData['success'] == true) {
+        setState(() => _compras = comprasData['data'] ?? []);
+      }
+    } catch (e) {
+      if (mounted) AlertService.showErrorAlert(context, 'Error', 'Error cargando datos del dashboard');
+    } finally {
+      if (mounted) setState(() => _cargando = false);
+    }
+  }
+
+  // Función auxiliar para convertir a double
+  double _parseToDouble(dynamic value) {
+    if (value == null) return 0.0;
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    if (value is String) {
+      // Remover comillas y convertir
+      return double.tryParse(value.replaceAll(',', '.')) ?? 0.0;
+    }
+    return 0.0;
+  }
+
+  double _calcularTotalVentas() {
+    double total = 0;
+    for (var venta in _ventas) {
+      if (venta['estado'] == 1 || venta['estado'] == '1') {
+        total += _parseToDouble(venta['total']);
+      }
+    }
+    return total;
+  }
+
+  double _calcularTotalCompras() {
+    double total = 0;
+    for (var compra in _compras) {
+      if (compra['estado'] == 2 || compra['estado'] == '2') {
+        total += _parseToDouble(compra['total']);
+      }
+    }
+    return total;
+  }
+
+  int _calcularCantidadVentas() {
+    return _ventas.where((v) => v['estado'] == 1 || v['estado'] == '1').length;
+  }
+
+  int _calcularCantidadCompras() {
+    return _compras.where((c) => c['estado'] == 2 || c['estado'] == '2').length;
+  }
+
+  Map<String, double> _getVentasPorMes() {
+    Map<String, double> ventasPorMes = {};
+    for (var venta in _ventas) {
+      if (venta['estado'] == 1 || venta['estado'] == '1') {
+        try {
+          DateTime fecha = DateTime.parse(venta['fecha']);
+          String mes = DateFormat('MMM yyyy').format(fecha);
+          ventasPorMes[mes] = (ventasPorMes[mes] ?? 0) + _parseToDouble(venta['total']);
+        } catch (_) {}
+      }
+    }
+    return ventasPorMes;
+  }
+
+  Map<String, double> _getComprasPorMes() {
+    Map<String, double> comprasPorMes = {};
+    for (var compra in _compras) {
+      if (compra['estado'] == 2 || compra['estado'] == '2') {
+        try {
+          DateTime fecha = DateTime.parse(compra['fecha']);
+          String mes = DateFormat('MMM yyyy').format(fecha);
+          comprasPorMes[mes] = (comprasPorMes[mes] ?? 0) + _parseToDouble(compra['total']);
+        } catch (_) {}
+      }
+    }
+    return comprasPorMes;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final totalVentas = _calcularTotalVentas();
+    final totalCompras = _calcularTotalCompras();
+    final gananciaBruta = totalVentas - totalCompras;
+    final ventasPorMes = _getVentasPorMes();
+    final comprasPorMes = _getComprasPorMes();
+
+    return Scaffold(
+      backgroundColor: TheBarColors.beigeClaro,
+      body: RefreshIndicator(
+        onRefresh: _cargarDatos,
+        child: _cargando
+            ? const Center(child: CircularProgressIndicator(color: TheBarColors.doradoCerveza))
+            : SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                physics: const AlwaysScrollableScrollPhysics(),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildMetricCard(
+                            'Total Ventas',
+                            '\$${formatCurrency(totalVentas)}',
+                            Icons.shopping_cart,
+                            TheBarColors.verdeExito,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _buildMetricCard(
+                            'Total Compras',
+                            '\$${formatCurrency(totalCompras)}',
+                            Icons.inventory,
+                            TheBarColors.naranjaCalido,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    _buildMetricCard(
+                      'Ganancia Bruta',
+                      '\$${formatCurrency(gananciaBruta)}',
+                      Icons.trending_up,
+                      gananciaBruta >= 0 ? TheBarColors.verdeExito : TheBarColors.rojoError,
+                    ),
+                    const SizedBox(height: 24),
+                    Card(
+                      elevation: 4,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Resumen General',
+                              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                            ),
+                            const SizedBox(height: 16),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    children: [
+                                      Text(
+                                        _calcularCantidadVentas().toString(),
+                                        style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: TheBarColors.verdeExito),
+                                      ),
+                                      const Text('Ventas', style: TextStyle(color: Colors.grey)),
+                                    ],
+                                  ),
+                                ),
+                                Container(height: 40, width: 1, color: Colors.grey.shade300),
+                                Expanded(
+                                  child: Column(
+                                    children: [
+                                      Text(
+                                        _calcularCantidadCompras().toString(),
+                                        style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: TheBarColors.naranjaCalido),
+                                      ),
+                                      const Text('Compras', style: TextStyle(color: Colors.grey)),
+                                    ],
+                                  ),
+                                ),
+                                Container(height: 40, width: 1, color: Colors.grey.shade300),
+                                Expanded(
+                                  child: Column(
+                                    children: [
+                                      Text(
+                                        (_calcularCantidadVentas() - _calcularCantidadCompras()).toString(),
+                                        style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: TheBarColors.doradoCerveza),
+                                      ),
+                                      const Text('Diferencia', style: TextStyle(color: Colors.grey)),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    if (ventasPorMes.isNotEmpty)
+                      Card(
+                        elevation: 4,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Row(
+                                children: [
+                                  Icon(Icons.shopping_cart, color: TheBarColors.verdeExito),
+                                  SizedBox(width: 8),
+                                  Text(
+                                    'Ventas por Mes',
+                                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 16),
+                              _buildBarChart(ventasPorMes, TheBarColors.verdeExito),
+                            ],
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: 16),
+                    if (comprasPorMes.isNotEmpty)
+                      Card(
+                        elevation: 4,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Row(
+                                children: [
+                                  Icon(Icons.inventory, color: TheBarColors.naranjaCalido),
+                                  SizedBox(width: 8),
+                                  Text(
+                                    'Compras por Mes',
+                                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 16),
+                              _buildBarChart(comprasPorMes, TheBarColors.naranjaCalido),
+                            ],
+                          ),
+                        ),
+                      ),
+                    if (ventasPorMes.isEmpty && comprasPorMes.isEmpty)
+                      Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.bar_chart, size: 80, color: TheBarColors.cafeOscuro.withOpacity(0.4)),
+                            const SizedBox(height: 20),
+                            const Text('No hay datos para mostrar', style: TextStyle(color: TheBarColors.cafeOscuro, fontSize: 16)),
+                            const SizedBox(height: 10),
+                            ElevatedButton(
+                              onPressed: _cargarDatos,
+                              style: ElevatedButton.styleFrom(backgroundColor: TheBarColors.doradoCerveza),
+                              child: const Text('REINTENTAR', style: TextStyle(color: TheBarColors.cafeOscuro)),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+      ),
+    );
+  }
+
+  Widget _buildMetricCard(String titulo, String valor, IconData icono, Color color) {
+    return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(titulo, style: const TextStyle(fontSize: 14, color: Colors.grey)),
+                Icon(icono, color: color, size: 24),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              valor,
+              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBarChart(Map<String, double> datos, Color color) {
+    if (datos.isEmpty) {
+      return const Center(child: Padding(padding: EdgeInsets.all(32), child: Text('Sin datos disponibles')));
+    }
+
+    final meses = datos.keys.toList();
+    meses.sort((a, b) {
+      try {
+        final dateA = DateFormat('MMM yyyy').parse(a);
+        final dateB = DateFormat('MMM yyyy').parse(b);
+        return dateA.compareTo(dateB);
+      } catch (_) {
+        return 0;
+      }
+    });
+    
+    final ultimosMeses = meses.length > 6 ? meses.sublist(meses.length - 6) : meses;
+    final maxValor = datos.values.reduce((a, b) => a > b ? a : b);
+    
+    return Column(
+      children: [
+        SizedBox(
+          height: 200,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: ultimosMeses.map((mes) {
+              final valor = datos[mes] ?? 0.0;
+              final double altura = maxValor > 0 ? (valor / maxValor) * 150 : 0.0;
+              return Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 4),
+                      height: altura,
+                      decoration: BoxDecoration(
+                        color: color,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Transform.rotate(
+                      angle: -0.5,
+                      child: Text(mes, style: const TextStyle(fontSize: 10), overflow: TextOverflow.ellipsis),
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text('0', style: TextStyle(fontSize: 10)),
+            Text(formatCurrency(maxValor), style: const TextStyle(fontSize: 10)),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+// ==============================================
 // VENTAS
 // ==============================================
 class VentasScreen extends StatefulWidget {
@@ -808,7 +1244,6 @@ class _VentasScreenState extends State<VentasScreen> {
   String _filtroBusqueda = '';
   String _filtroEstado = 'Todos';
   int _paginaActual = 1;
-
   final int _registrosPorPagina = 4;
 
   @override
@@ -864,21 +1299,12 @@ class _VentasScreenState extends State<VentasScreen> {
     }
   }
 
-  Color _colorEstado(dynamic estado) {
-    switch (estado.toString()) {
-      case '1': return TheBarColors.verdeExito;
-      case '0':
-      case '3': return TheBarColors.rojoError;
-      default:  return Colors.grey;
-    }
-  }
-
   String _nombreEstado(dynamic estado) {
     switch (estado.toString()) {
       case '1': return 'Completado';
       case '0':
       case '3': return 'Anulado';
-      default:  return estado.toString();
+      default: return estado.toString();
     }
   }
 
@@ -943,7 +1369,7 @@ class _VentasScreenState extends State<VentasScreen> {
             child: _cargando
                 ? const Center(child: CircularProgressIndicator(color: TheBarColors.doradoCerveza))
                 : filtradas.isEmpty
-                    ? _buildVacio('No hay ventas', Icons.shopping_cart_outlined, _cargarDatos)
+                    ? _buildEmptyState()
                     : Column(
                         children: [
                           Expanded(
@@ -953,10 +1379,7 @@ class _VentasScreenState extends State<VentasScreen> {
                               itemBuilder: (_, i) => _buildVentaCard(pagina[i]),
                             ),
                           ),
-                          _buildPaginacion(
-                            _paginaActual,
-                            totalPaginas,
-                            totalRegistros: totalRegistros,
+                          _buildPaginacion(_paginaActual, totalPaginas, totalRegistros: totalRegistros,
                             onAnterior: () => setState(() => _paginaActual--),
                             onSiguiente: () => setState(() => _paginaActual++),
                           ),
@@ -979,10 +1402,7 @@ class _VentasScreenState extends State<VentasScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Expanded(
-                  child: Text(_nombreCliente(venta['id_cliente']),
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                ),
+                Expanded(child: Text(_nombreCliente(venta['id_cliente']), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16))),
                 _badgeEstado(venta['estado']),
               ],
             ),
@@ -991,8 +1411,7 @@ class _VentasScreenState extends State<VentasScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text('Fecha: ${_formatFecha(venta['fecha'])}'),
-                Text('Total: \$${formatCurrency(venta['total'])}',
-                  style: const TextStyle(fontWeight: FontWeight.bold)),
+                Text('Total: \$${formatCurrency(venta['total'])}', style: const TextStyle(fontWeight: FontWeight.bold)),
               ],
             ),
             const SizedBox(height: 8),
@@ -1015,7 +1434,13 @@ class _VentasScreenState extends State<VentasScreen> {
   }
 
   Widget _badgeEstado(dynamic estado) {
-    final color = _colorEstado(estado);
+    Color color;
+    switch (estado.toString()) {
+      case '1': color = TheBarColors.verdeExito; break;
+      case '0':
+      case '3': color = TheBarColors.rojoError; break;
+      default: color = Colors.grey;
+    }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
@@ -1049,7 +1474,7 @@ class _VentasScreenState extends State<VentasScreen> {
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
-              children: ['Todos', 'Completado', 'Pendiente', 'Anulado'].map((estado) =>
+              children: ['Todos', 'Completado', 'Anulado'].map((estado) =>
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 4),
                   child: ChoiceChip(
@@ -1061,6 +1486,25 @@ class _VentasScreenState extends State<VentasScreen> {
                 ),
               ).toList(),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.shopping_cart_outlined, size: 80, color: TheBarColors.cafeOscuro.withOpacity(0.4)),
+          const SizedBox(height: 20),
+          const Text('No hay ventas', style: TextStyle(color: TheBarColors.cafeOscuro, fontSize: 16)),
+          const SizedBox(height: 10),
+          ElevatedButton(
+            onPressed: _cargarDatos,
+            style: ElevatedButton.styleFrom(backgroundColor: TheBarColors.doradoCerveza),
+            child: const Text('REINTENTAR', style: TextStyle(color: TheBarColors.cafeOscuro)),
           ),
         ],
       ),
@@ -1088,7 +1532,6 @@ class _ComprasScreenState extends State<ComprasScreen> {
   String _filtroBusqueda = '';
   String _filtroEstado = 'Todos';
   int _paginaActual = 1;
-
   final int _registrosPorPagina = 4;
 
   @override
@@ -1151,21 +1594,12 @@ class _ComprasScreenState extends State<ComprasScreen> {
     }
   }
 
-  Color _colorEstado(dynamic estado) {
-    switch (estado.toString()) {
-      case '1': return TheBarColors.naranjaCalido;
-      case '2': return TheBarColors.verdeExito;
-      case '0': return TheBarColors.rojoError;
-      default:  return Colors.grey;
-    }
-  }
-
   String _nombreEstado(dynamic estado) {
     switch (estado.toString()) {
       case '1': return 'Pendiente';
       case '2': return 'Completado';
       case '0': return 'Anulado';
-      default:  return estado.toString();
+      default: return estado.toString();
     }
   }
 
@@ -1232,7 +1666,7 @@ class _ComprasScreenState extends State<ComprasScreen> {
             child: _cargando
                 ? const Center(child: CircularProgressIndicator(color: TheBarColors.doradoCerveza))
                 : filtradas.isEmpty
-                    ? _buildVacio('No hay compras', Icons.inventory_outlined, _cargarDatos)
+                    ? _buildEmptyState()
                     : Column(
                         children: [
                           Expanded(
@@ -1242,10 +1676,7 @@ class _ComprasScreenState extends State<ComprasScreen> {
                               itemBuilder: (_, i) => _buildCompraCard(pagina[i]),
                             ),
                           ),
-                          _buildPaginacion(
-                            _paginaActual,
-                            totalPaginas,
-                            totalRegistros: totalRegistros,
+                          _buildPaginacion(_paginaActual, totalPaginas, totalRegistros: totalRegistros,
                             onAnterior: () => setState(() => _paginaActual--),
                             onSiguiente: () => setState(() => _paginaActual++),
                           ),
@@ -1268,10 +1699,7 @@ class _ComprasScreenState extends State<ComprasScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Expanded(
-                  child: Text(_nombreProveedor(compra),
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                ),
+                Expanded(child: Text(_nombreProveedor(compra), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16))),
                 _badgeEstado(compra['estado']),
               ],
             ),
@@ -1280,8 +1708,7 @@ class _ComprasScreenState extends State<ComprasScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text('Fecha: ${_formatFecha(compra['fecha'])}'),
-                Text('Total: \$${formatCurrency(compra['total'])}',
-                  style: const TextStyle(fontWeight: FontWeight.bold)),
+                Text('Total: \$${formatCurrency(compra['total'])}', style: const TextStyle(fontWeight: FontWeight.bold)),
               ],
             ),
             const SizedBox(height: 8),
@@ -1304,7 +1731,13 @@ class _ComprasScreenState extends State<ComprasScreen> {
   }
 
   Widget _badgeEstado(dynamic estado) {
-    final color = _colorEstado(estado);
+    Color color;
+    switch (estado.toString()) {
+      case '1': color = TheBarColors.naranjaCalido; break;
+      case '2': color = TheBarColors.verdeExito; break;
+      case '0': color = TheBarColors.rojoError; break;
+      default: color = Colors.grey;
+    }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
@@ -1355,10 +1788,29 @@ class _ComprasScreenState extends State<ComprasScreen> {
       ),
     );
   }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.inventory_outlined, size: 80, color: TheBarColors.cafeOscuro.withOpacity(0.4)),
+          const SizedBox(height: 20),
+          const Text('No hay compras', style: TextStyle(color: TheBarColors.cafeOscuro, fontSize: 16)),
+          const SizedBox(height: 10),
+          ElevatedButton(
+            onPressed: _cargarDatos,
+            style: ElevatedButton.styleFrom(backgroundColor: TheBarColors.doradoCerveza),
+            child: const Text('REINTENTAR', style: TextStyle(color: TheBarColors.cafeOscuro)),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 // ==============================================
-// WIDGET REUTILIZABLE PARA VER DETALLE DE COMPRA/VENTA
+// DIALOGO DE DETALLE REUTILIZABLE
 // ==============================================
 class _DetalleDialog extends StatelessWidget {
   final String titulo;
@@ -1385,126 +1837,71 @@ class _DetalleDialog extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Header
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(16),
               decoration: const BoxDecoration(
                 color: TheBarColors.cafeOscuro,
-                borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(16),
-                  topRight: Radius.circular(16),
-                ),
+                borderRadius: BorderRadius.only(topLeft: Radius.circular(16), topRight: Radius.circular(16)),
               ),
               child: Row(
                 children: [
                   Icon(icono, color: TheBarColors.doradoCerveza, size: 28),
                   const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      titulo,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  GestureDetector(
-                    onTap: () => Navigator.of(context).pop(),
-                    child: const Icon(Icons.close, color: Colors.white70),
-                  ),
+                  Expanded(child: Text(titulo, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold))),
+                  GestureDetector(onTap: () => Navigator.of(context).pop(), child: const Icon(Icons.close, color: Colors.white70)),
                 ],
               ),
             ),
-            // Contenido
             SingleChildScrollView(
               padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Info
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: TheBarColors.beigeClaro,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
+                    decoration: BoxDecoration(color: TheBarColors.beigeClaro, borderRadius: BorderRadius.circular(8)),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
-                      children: infoLineas.map((linea) {
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 3),
-                          child: Text(linea, style: const TextStyle(fontSize: 14)),
-                        );
-                      }).toList(),
+                      children: infoLineas.map((linea) => Padding(padding: const EdgeInsets.symmetric(vertical: 3), child: Text(linea, style: const TextStyle(fontSize: 14)))).toList(),
                     ),
                   ),
                   const SizedBox(height: 16),
-                  // Productos
                   if (detalles.isEmpty)
-                    const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(20),
-                        child: Text('Sin productos', style: TextStyle(color: Colors.grey)),
-                      ),
-                    )
+                    const Center(child: Padding(padding: EdgeInsets.all(20), child: Text('Sin productos', style: TextStyle(color: Colors.grey))))
                   else
-                    ...detalles.map((d) {
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.grey.shade300),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    fixTextEncoding(d['nombre_producto'] ?? 'Producto'),
-                                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-                                  ),
-                                  Text(
-                                    '${d['cantidad']} x \$${formatCurrency(d['precio'])}',
-                                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                                  ),
-                                ],
-                              ),
+                    ...detalles.map((d) => Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.grey.shade300)),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(fixTextEncoding(d['nombre_producto'] ?? 'Producto'), style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                                Text('${d['cantidad']} x \$${formatCurrency(d['precio'])}', style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                              ],
                             ),
-                            Text(
-                              '\$${formatCurrency(d['subtotal'])}',
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                            ),
-                          ],
-                        ),
-                      );
-                    }).toList(),
+                          ),
+                          Text('\$${formatCurrency(d['subtotal'])}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                        ],
+                      ),
+                    )),
                   const SizedBox(height: 16),
-                  // Total
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: TheBarColors.doradoCerveza.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: TheBarColors.doradoCerveza),
-                    ),
+                    decoration: BoxDecoration(color: TheBarColors.doradoCerveza.withOpacity(0.2), borderRadius: BorderRadius.circular(8), border: Border.all(color: TheBarColors.doradoCerveza)),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         const Text('TOTAL', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                        Text(
-                          '\$${formatCurrency(total)}',
-                          style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-                        ),
+                        Text('\$${formatCurrency(total)}', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
                       ],
                     ),
                   ),
@@ -1521,25 +1918,6 @@ class _DetalleDialog extends StatelessWidget {
 // ==============================================
 // WIDGETS HELPERS GLOBALES
 // ==============================================
-Widget _buildVacio(String mensaje, IconData icono, VoidCallback onReintentar) {
-  return Center(
-    child: Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Icon(icono, size: 80, color: TheBarColors.cafeOscuro.withOpacity(0.4)),
-        const SizedBox(height: 20),
-        Text(mensaje, style: const TextStyle(color: TheBarColors.cafeOscuro, fontSize: 16)),
-        const SizedBox(height: 10),
-        ElevatedButton(
-          onPressed: onReintentar,
-          style: ElevatedButton.styleFrom(backgroundColor: TheBarColors.doradoCerveza),
-          child: const Text('REINTENTAR', style: TextStyle(color: TheBarColors.cafeOscuro)),
-        ),
-      ],
-    ),
-  );
-}
-
 Widget _buildPaginacion(
   int paginaActual,
   int totalPaginas, {
@@ -1560,23 +1938,12 @@ Widget _buildPaginacion(
       children: [
         IconButton(
           onPressed: paginaActual > 1 ? onAnterior : null,
-          icon: Icon(
-            Icons.arrow_back_ios,
-            size: 18,
-            color: paginaActual > 1 ? TheBarColors.cafeOscuro : Colors.grey.shade300,
-          ),
+          icon: Icon(Icons.arrow_back_ios, size: 18, color: paginaActual > 1 ? TheBarColors.cafeOscuro : Colors.grey.shade300),
         ),
-        Text(
-          'Página $paginaActual de $totalPaginas',
-          style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
-        ),
+        Text('Página $paginaActual de $totalPaginas', style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14)),
         IconButton(
           onPressed: paginaActual < totalPaginas ? onSiguiente : null,
-          icon: Icon(
-            Icons.arrow_forward_ios,
-            size: 18,
-            color: paginaActual < totalPaginas ? TheBarColors.cafeOscuro : Colors.grey.shade300,
-          ),
+          icon: Icon(Icons.arrow_forward_ios, size: 18, color: paginaActual < totalPaginas ? TheBarColors.cafeOscuro : Colors.grey.shade300),
         ),
       ],
     ),
