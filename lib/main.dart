@@ -58,7 +58,7 @@ class MyApp extends StatelessWidget {
 }
 
 class ApiConfig {
-  static const String baseUrl = 'http://10.0.2.2:3000';
+   static const String baseUrl = 'https://api-stockbar-i93o.onrender.com';
 }
 
 String fixTextEncoding(String? text) {
@@ -200,6 +200,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _iniciarSesion() async {
+    print('Conectando a: ${ApiConfig.baseUrl}/api/login');
     if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
       AlertService.showErrorAlert(context, 'Error', 'Completa todos los campos');
       return;
@@ -1244,7 +1245,7 @@ class _VentasScreenState extends State<VentasScreen> {
   String _filtroBusqueda = '';
   String _filtroEstado = 'Todos';
   int _paginaActual = 1;
-  final int _registrosPorPagina = 4;
+  final int _registrosPorPagina = 3;
 
   @override
   void initState() {
@@ -1532,7 +1533,7 @@ class _ComprasScreenState extends State<ComprasScreen> {
   String _filtroBusqueda = '';
   String _filtroEstado = 'Todos';
   int _paginaActual = 1;
-  final int _registrosPorPagina = 4;
+  final int _registrosPorPagina = 3;
 
   @override
   void initState() {
