@@ -534,7 +534,6 @@ class _LoginScreenState extends State<LoginScreen> {
           controller: _codigoController,
           decoration: InputDecoration(
             labelText: 'Código de 6 dígitos',
-            hintText: 'Ej: 123456',
             prefixIcon: const Icon(Icons.vpn_key, color: TheBarColors.doradoCerveza),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
