@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
+import 'package:flutter/services.dart';
 
 class TheBarColors {
   static const Color beigeClaro = Color(0xFFF5EFE6);
@@ -493,46 +494,133 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Widget _buildVerificarCodigoForm() {
-    return Column(
-      children: [
-        const Text('Verificar Código', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 12),
-        Text('Código enviado a: $_emailRecuperacion', textAlign: TextAlign.center, style: const TextStyle(color: Colors.blue)),
-        const SizedBox(height: 20),
-        TextField(
+  return Column(
+    children: [
+      const Text(
+        'Verificar Código',
+        style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: TheBarColors.cafeOscuro),
+      ),
+      const SizedBox(height: 12),
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        decoration: BoxDecoration(
+          color: TheBarColors.beigeClaro,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          children: [
+            const Text(
+              'Ingresá el código de 6 dígitos que enviamos a',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 14, color: Colors.grey),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              _emailRecuperacion,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 16, 
+                fontWeight: FontWeight.bold, 
+                color: TheBarColors.cafeOscuro
+              ),
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 24),
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        child: TextField(
           controller: _codigoController,
-          decoration: const InputDecoration(
-            labelText: 'Código de 6 dígitos', prefixIcon: Icon(Icons.vpn_key), border: OutlineInputBorder(),
+          decoration: InputDecoration(
+            labelText: 'Código de 6 dígitos',
+            hintText: 'Ej: 123456',
+            prefixIcon: const Icon(Icons.vpn_key, color: TheBarColors.doradoCerveza),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: TheBarColors.naranjaCalido, width: 2),
+            ),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
           ),
           keyboardType: TextInputType.number,
           maxLength: 6,
           textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 24, letterSpacing: 10),
+          style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, letterSpacing: 8),
+          inputFormatters: [
+            FilteringTextInputFormatter.digitsOnly,
+            LengthLimitingTextInputFormatter(6),
+          ],
         ),
-        const SizedBox(height: 20),
-        _cargando
-            ? const CircularProgressIndicator(color: TheBarColors.doradoCerveza)
-            : Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => setState(() { _mostrarVerificarCodigo = false; _mostrarRecuperar = true; }),
-                      child: const Text('VOLVER'),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: _verificarCodigo,
-                      style: ElevatedButton.styleFrom(backgroundColor: TheBarColors.doradoCerveza),
-                      child: const Text('VERIFICAR', style: TextStyle(color: TheBarColors.cafeOscuro)),
-                    ),
-                  ),
-                ],
+      ),
+      const SizedBox(height: 8),
+      TextButton(
+        onPressed: () {
+          // Reenviar código
+          _solicitarRecuperacion();
+        },
+        child: RichText(
+          text: TextSpan(
+            style: const TextStyle(fontSize: 14),
+            children: [
+              const TextSpan(
+                text: '¿No recibiste el código? ',
+                style: TextStyle(color: Colors.grey),
               ),
-      ],
-    );
-  }
+              TextSpan(
+                text: 'Reenviar',
+                style: TextStyle(
+                  color: TheBarColors.doradoCerveza,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      const SizedBox(height: 20),
+      _cargando
+          ? const CircularProgressIndicator(color: TheBarColors.doradoCerveza)
+          : Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => setState(() {
+                      _mostrarVerificarCodigo = false;
+                      _mostrarRecuperar = true;
+                      _codigoController.clear();
+                    }),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: TheBarColors.cafeOscuro),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Text('VOLVER', style: TextStyle(color: TheBarColors.cafeOscuro)),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: _verificarCodigo,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: TheBarColors.doradoCerveza,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Text('VERIFICAR', style: TextStyle(color: TheBarColors.cafeOscuro, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+              ],
+            ),
+    ],
+  );
+}
 
   Widget _buildNuevaPasswordForm() {
     return Column(
